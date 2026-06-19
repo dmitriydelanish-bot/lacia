@@ -11,79 +11,395 @@ html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;touch-action:n
 #c{position:absolute;touch-action:none}
 #hud{position:fixed;left:12px;top:12px;color:#cfe3ff;font-size:13px;line-height:1.4;text-shadow:0 1px 3px #000;pointer-events:none;z-index:5}
 .bar{width:120px;height:6px;background:#ffffff22;border-radius:3px;margin:2px 0 8px}
-.fill{height:100%;border-radius:3px;width:0%;transition:width .12s}
-#hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#ffe08a;font-size:12px;pointer-events:none;z-index:5}
-#btn{position:fixed;right:12px;top:12px;z-index:6;background:#ffffff18;color:#cfe3ff;border:1px solid #ffffff33;border-radius:8px;padding:7px 10px;font-size:12px}
-#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9fc4ff;font-size:15px;z-index:9}
+.fill{height:100%;border-radius:3px;width:0%;transition:width .1s}
+#hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#ffe08a;font-size:12px;pointer-events:none;z-index:5;transition:opacity .5s}
+#btn{position:fixed;right:12px;top:12px;z-index:6;background:#ffffff18;color:#cfe3ff;border:1px solid #ffffff33;border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer}
+#mode{position:fixed;right:12px;top:50px;z-index:6;background:#ffffff18;color:#cfe3ff;border:1px solid #ffffff33;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer}
+#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9fc4ff;font-size:15px;z-index:9;background:#0d1020}
 </style>
 </head>
 <body>
 <div id="load">Lacia загружается… 🌙</div>
 <div id="wrap"><img id="bg" crossorigin="anonymous"><canvas id="c"></canvas></div>
 <button id="btn">Настройка: ВКЛ</button>
+<button id="mode">Режим: Ласка</button>
 <div id="hud">
 <div>Возбуждение</div><div class="bar"><div class="fill" id="fA" style="background:#ff6fae"></div></div>
 <div>Влага</div><div class="bar"><div class="fill" id="fW" style="background:#56bdf7"></div></div>
 <div>Пульс</div><div class="bar"><div class="fill" id="fP" style="background:#ff9a6f"></div></div>
 </div>
-<div id="hint">РЕЖИМ НАСТРОЙКИ: тапни по киске на фото • свайп вверх/вниз = размер</div>
+<div id="hint">ТАПНИ по киске на фото • свайп вверх/вниз = размер</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 <script>
 const IMG_URL="https://mira-bot.api.newcoolproject.io/api/v1/media/f15X2mFnfn42";
-const bg=document.getElementById('bg'),cv=document.getElementById('c'),ctx=cv.getContext('2d'),btn=document.getElementById('btn'),hint=document.getElementById('hint');
-const KEY='lacia_pos';let saved=JSON.parse(localStorage.getItem(KEY)||'null');
-let PX=saved?saved.x:0.5,PY=saved?saved.y:0.62,PR=saved?saved.r:0.13;
-let calib=true;
+const {Engine,World,Bodies,Body,Composite,Constraint,Mouse,MouseConstraint,Events,Vector}=Matter;
+
+const bg=document.getElementById('bg'),cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const btn=document.getElementById('btn'),modeBtn=document.getElementById('mode'),hint=document.getElementById('hint');
+const KEY='lacia_pos2';
+let saved=JSON.parse(localStorage.getItem(KEY)||'null');
+let PX=saved?saved.x:0.5, PY=saved?saved.y:0.62, PR=saved?saved.r:0.13;
+let calib=true, touchMode='pet'; // pet, thrust, circle
+const modes=['Ласка','Толчок','Круг'];
+let modeIdx=0;
+
 let box={x:0,y:0,w:0,h:0};
-function fit(){const r=bg.getBoundingClientRect();box={x:r.left,y:r.top,w:r.width,h:r.height};cv.style.left=r.left+'px';cv.style.top=r.top+'px';cv.width=r.width;cv.height=r.height;cv.style.width=r.width+'px';cv.style.height=r.height+'px';}
+function fit(){
+  const r=bg.getBoundingClientRect();
+  box={x:r.left,y:r.top,w:r.width,h:r.height};
+  cv.style.left=r.left+'px';cv.style.top=r.top+'px';
+  cv.width=r.width;cv.height=r.height;
+  cv.style.width=r.width+'px';cv.style.height=r.height+'px';
+  rebuildPhysics();
+}
 window.addEventListener('resize',fit);
-let arousal=0,wet=0,pulse=0,open=0,touch=null,tt=0,fluids=[];
-let selfX=0,selfY=0; // self-touch finger offset
-function cx(){return PX*cv.width;}function cy(){return PY*cv.height;}function rad(){return PR*cv.width;}
-function touchNear(){if(!touch)return false;return Math.hypot(touch.x-cx(),touch.y-cy())<rad()*2.2;}
+
+// Physics engine
+let engine,world,outerLipL,outerLipR,innerLipL,innerLipR,clitBody,entranceBodies=[];
+let arousal=0,wet=0,pulse=0,open=0,tt=0,fluids=[];
+let selfTouchAngle=0,selfTouchActive=false;
+let userTouch=null,lastTouchPos=null,touchVel={x:0,y:0};
+
+function cx(){return PX*cv.width;}
+function cy(){return PY*cv.height;}
+function rad(){return PR*cv.width;}
+
+function rebuildPhysics(){
+  if(engine){Engine.clear(engine);World.clear(world,false);}
+  engine=Engine.create({gravity:{x:0,y:0}});
+  world=engine.world;
+  const X=cx(),Y=cy(),R=rad();
+  const lipW=R*0.9,lipH=R*1.6;
+  // Outer lips - soft body clusters
+  outerLipL=createSoftBody(X-lipW*0.5,Y,lipW*0.5,lipH,8,12,0.003);
+  outerLipR=createSoftBody(X+lipW*0.5,Y,lipW*0.5,lipH,8,12,0.003);
+  // Inner lips
+  innerLipL=createSoftBody(X-lipW*0.25,Y+R*0.1,lipW*0.3,lipH*0.7,5,8,0.004);
+  innerLipR=createSoftBody(X+lipW*0.25,Y+R*0.1,lipW*0.3,lipH*0.7,5,8,0.004);
+  // Clit
+  clitBody=Bodies.circle(X,Y-lipH*0.85,R*0.08,{
+    friction:0.1,restitution:0.3,density:0.002,
+    render:{fillStyle:'#f4a8b4'}
+  });
+  World.add(world,clitBody);
+  // Anchor clit
+  World.add(world,Constraint.create({
+    bodyA:clitBody,pointB:{x:X,y:Y-lipH*0.85},
+    stiffness:0.08,damping:0.1,length:0
+  }));
+}
+
+function createSoftBody(cx,cy,w,h,cols,rows,stiff){
+  const bodies=[];
+  const constraints=[];
+  const spacingX=w*2/cols,spacingY=h*2/rows;
+  const startX=cx-w,startY=cy-h;
+  for(let r=0;r<=rows;r++){
+    for(let c=0;c<=cols;c++){
+      const x=startX+c*spacingX,y=startY+r*spacingY;
+      const b=Bodies.circle(x,y,Math.min(spacingX,spacingY)*0.4,{
+        friction:0.05,restitution:0.2,density:0.001,
+        collisionFilter:{group:-1}
+      });
+      bodies.push(b);
+    }
+  }
+  // Connect neighbors with springs
+  for(let r=0;r<=rows;r++){
+    for(let c=0;c<=cols;c++){
+      const i=r*(cols+1)+c;
+      // Right
+      if(c<cols){const j=i+1;constraints.push(createSpring(bodies[i],bodies[j],stiff));}
+      // Down
+      if(r<rows){const j=i+(cols+1);constraints.push(createSpring(bodies[i],bodies[j],stiff));}
+      // Diagonal
+      if(c<cols&&r<rows){
+        const j=i+(cols+1)+1;
+        constraints.push(createSpring(bodies[i],bodies[j],stiff*0.7));
+      }
+      if(c>0&&r<rows){
+        const j=i+(cols+1)-1;
+        constraints.push(createSpring(bodies[i],bodies[j],stiff*0.7));
+      }
+    }
+  }
+  // Anchor center bodies to rest position
+  for(const b of bodies){
+    World.add(world,Constraint.create({
+      bodyA:b,pointB:{x:b.position.x,y:b.position.y},
+      stiffness:0.015,damping:0.05,length:0
+    }));
+  }
+  World.add(world,bodies);
+  World.add(world,constraints);
+  return {bodies,constraints,cols,rows,startX,startY,spacingX,spacingY};
+}
+
+function createSpring(a,b,stiff){
+  return Constraint.create({
+    bodyA:a,bodyB:b,
+    stiffness:stiff,damping:0.05,
+    length:Vector.magnitude(Vector.sub(a.position,b.position))
+  });
+}
+
+// Skin shader simulation via canvas
+function skinColor(depth,wetness){
+  // Base skin: warm peach-pink
+  const base={r:248,g:195,b:185};
+  // Inner: deeper pink-red
+  const inner={r:180,g:80,b:95};
+  // Deep: dark rose
+  const deep={r:130,g:50,b:65};
+  let c;
+  if(depth<0.3){
+    const t=depth/0.3;
+    c={r:base.r+(inner.r-base.r)*t,g:base.g+(inner.g-base.g)*t,b:base.b+(inner.b-base.b)*t};
+  }else{
+    const t=(depth-0.3)/0.7;
+    c={r:inner.r+(deep.r-inner.r)*t,g:inner.g+(deep.g-inner.g)*t,b:inner.b+(deep.b-inner.b)*t};
+  }
+  // Wet sheen
+  if(wetness>0.3){
+    const ws=Math.min(1,(wetness-0.3)*1.5);
+    c.r=Math.min(255,c.r+ws*30);c.g=Math.min(255,c.g+ws*25);c.b=Math.min(255,c.b+ws*30);
+  }
+  return c;
+}
+
+function drawSoftBodyCluster(sb,depth,wetness){
+  const {bodies,cols,rows}=sb;
+  // Draw filled shape through outer points
+  const pts=[];
+  // Get perimeter points (top row, right col, bottom row, left col)
+  for(let c=0;c<=cols;c++)pts.push(bodies[c].position); // top
+  for(let r=1;r<=rows;r++)pts.push(bodies[r*(cols+1)+cols].position); // right
+  for(let c=cols-1;c>=0;c--)pts.push(bodies[rows*(cols+1)+c].position); // bottom
+  for(let r=rows-1;r>=1;r--)pts.push(bodies[r*(cols+1)].position); // left
+
+  if(pts.length<3)return;
+  const sc=skinColor(depth,wetness);
+  ctx.fillStyle=`rgb(${sc.r|0},${sc.g|0},${sc.b|0})`;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++){
+    const prev=pts[i-1],cur=pts[i];
+    const mx=(prev.x+cur.x)/2,my=(prev.y+cur.y)/2;
+    ctx.quadraticCurveTo(prev.x,prev.y,mx,my);
+  }
+  ctx.closePath();ctx.fill();
+
+  // Subsurface scattering glow
+  if(arousal>0.2){
+    const cx2=pts.reduce((s,p)=>s+p.x,0)/pts.length;
+    const cy2=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+    const gr=ctx.createRadialGradient(cx2,cy2,0,cx2,cy2,rad()*0.8);
+    gr.addColorStop(0,`rgba(255,120,160,${arousal*0.15})`);
+    gr.addColorStop(1,'rgba(255,120,160,0)');
+    ctx.fillStyle=gr;ctx.fill();
+  }
+}
+
 function draw(){
-tt+=0.05;ctx.clearRect(0,0,cv.width,cv.height);
-const X=cx(),Y=cy(),R=rad();
-if(calib){ctx.strokeStyle='#ffe08a';ctx.lineWidth=2;ctx.setLineDash([6,5]);ctx.beginPath();ctx.ellipse(X,Y,R,R*1.7,0,0,7);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ffe08a';ctx.font='12px sans-serif';ctx.textAlign='center';ctx.fillText('здесь киска?',X,Y-R*1.7-8);requestAnimationFrame(draw);return;}
-const breathe=Math.sin(tt*1.4)*(2+pulse*4);
-// autonomous self-touch when user idle
-const selfActive=!touch&&arousal<0.95;
-if(selfActive){const sp=tt*2.2;selfX=Math.cos(sp)*R*0.5;selfY=-R*1.0+Math.sin(sp)*R*0.35;arousal=Math.min(0.9,arousal+0.004);wet=Math.min(0.9,wet+0.003);pulse=Math.min(0.8,pulse+0.012);}
-open+=((touchNear()?(0.4+arousal*0.6):(0.15+arousal*0.45))-open)*0.08;
-let g=ctx.createRadialGradient(X,Y,R*0.3,X,Y,R*1.9);
-g.addColorStop(0,'rgba(255,140,180,'+(0.10+arousal*0.32)+')');g.addColorStop(1,'rgba(255,140,180,0)');
-ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(X,Y,R*1.9,R*2.2,0,0,7);ctx.fill();
-ctx.save();ctx.translate(X,Y+breathe);
-const lipW=R*(0.95+open*0.10),lipH=R*1.7;
-let lg=ctx.createLinearGradient(-lipW,0,lipW,0);
-lg.addColorStop(0,'#dd9089');lg.addColorStop(0.5,'#f7bcbc');lg.addColorStop(1,'#dd9089');
-ctx.fillStyle=lg;ctx.beginPath();ctx.ellipse(0,0,lipW,lipH,0,0,7);ctx.fill();
-const iw=R*(0.18+open*0.55),ih=lipH*0.78;
-let ig=ctx.createLinearGradient(0,-ih,0,ih);
-ig.addColorStop(0,'#c25b6a');ig.addColorStop(0.5,'#9c3b52');ig.addColorStop(1,'#7e2c45');
-ctx.fillStyle=ig;ctx.beginPath();ctx.ellipse(0,0,iw,ih,0,0,7);ctx.fill();
-ctx.globalCompositeOperation='screen';
-ctx.fillStyle='rgba(255,235,245,'+(0.12+wet*0.4)+')';
-ctx.beginPath();ctx.ellipse(-iw*0.3,-ih*0.3,iw*0.4,ih*0.3,0.4,0,7);ctx.fill();
-ctx.globalCompositeOperation='source-over';
-ctx.fillStyle='#f4a8b4';ctx.beginPath();ctx.ellipse(0,-lipH*0.78,R*0.10*(1+arousal*0.4),R*0.12*(1+arousal*0.4),0,0,7);ctx.fill();
-// self-touch fingers
-if(selfActive){ctx.fillStyle='rgba(250,210,195,0.9)';ctx.beginPath();ctx.ellipse(selfX,selfY,R*0.13,R*0.30,0.3,0,7);ctx.fill();ctx.beginPath();ctx.ellipse(selfX+R*0.18,selfY+R*0.1,R*0.11,R*0.26,0.3,0,7);ctx.fill();}
-ctx.restore();
-if(wet>0.4&&Math.random()<wet*0.15){fluids.push({x:X+(Math.random()-0.5)*R*0.4,y:Y+lipH*0.6,vy:0.5+Math.random(),life:1,w:2+Math.random()*3});}
-for(const f of fluids){f.y+=f.vy;f.vy+=0.05;f.life-=0.006;ctx.fillStyle='rgba(200,225,255,'+(f.life*0.6)+')';ctx.beginPath();ctx.ellipse(f.x,f.y,f.w,f.w*2.2,0,0,7);ctx.fill();}
-fluids=fluids.filter(f=>f.life>0&&f.y<cv.height);
-if(touchNear()){arousal=Math.min(1,arousal+0.014);wet=Math.min(1,wet+0.011);pulse=Math.min(1,pulse+0.035);}else if(!selfActive){arousal*=0.998;wet*=0.9995;pulse*=0.95;}
-fA.style.width=(arousal*100)+'%';fW.style.width=(wet*100)+'%';fP.style.width=(Math.abs(Math.sin(tt*2.4))*pulse*100)+'%';
-requestAnimationFrame(draw);}
+  tt+=0.05;
+  Engine.update(engine,1000/60);
+  ctx.clearRect(0,0,cv.width,cv.height);
+
+  if(calib){
+    const X=cx(),Y=cy(),R=rad();
+    ctx.strokeStyle='#ffe08a';ctx.lineWidth=2;ctx.setLineDash([6,5]);
+    ctx.beginPath();ctx.ellipse(X,Y,R,R*1.7,0,0,7);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#ffe08a';ctx.font='13px sans-serif';ctx.textAlign='center';
+    ctx.fillText('тапни сюда',X,Y-R*1.7-10);
+    requestAnimationFrame(draw);return;
+  }
+
+  const X=cx(),Y=cy(),R=rad();
+
+  // Open factor based on arousal
+  open+=(arousal*0.6-open)*0.06;
+
+  // Apply spread to outer lips based on open
+  if(outerLipL&&outerLipR){
+    const spread=open*R*0.4;
+    for(const b of outerLipL.bodies){
+      Body.applyForce(b,b.position,{x:-spread*0.00003,y:0});
+    }
+    for(const b of outerLipR.bodies){
+      Body.applyForce(b,b.position,{x:spread*0.00003,y:0});
+    }
+  }
+
+  // Self-touch when idle
+  selfTouchActive=!userTouch&&arousal<0.95;
+  if(selfTouchActive){
+    selfTouchAngle+=0.04+arousal*0.03;
+    const sx=X+Math.cos(selfTouchAngle)*R*0.3;
+    const sy=Y-R*1.2+Math.sin(selfTouchAngle)*R*0.2;
+    if(clitBody){
+      Body.applyForce(clitBody,clitBody.position,{
+        x:(sx-clitBody.position.x)*0.00005,
+        y:(sy-clitBody.position.y)*0.00005
+      });
+    }
+    arousal=Math.min(0.85,arousal+0.003);
+    wet=Math.min(0.85,wet+0.002);
+    pulse=Math.min(0.7,pulse+0.01);
+  }
+
+  // User touch interaction
+  if(userTouch){
+    const dx=userTouch.x-X,dy=userTouch.y-Y;
+    const dist=Math.hypot(dx,dy);
+    if(dist<R*2.5){
+      const force=0.00008;
+      // Affect nearby bodies
+      [outerLipL,outerLipR,innerLipL,innerLipR].forEach(sb=>{
+        for(const b of sb.bodies){
+          const bd=Math.hypot(b.position.x-userTouch.x,b.position.y-userTouch.y);
+          if(bd<R*0.8){
+            const f=(1-bd/(R*0.8))*force;
+            if(touchMode==='pet'){
+              Body.applyForce(b,b.position,{x:dx/(dist+1)*f,y:dy/(dist+1)*f});
+            }else if(touchMode==='thrust'){
+              Body.applyForce(b,b.position,{x:0,y:f*3});
+            }else{
+              const angle=Math.atan2(dy,dx)+Math.PI/2;
+              Body.applyForce(b,b.position,{x:Math.cos(angle)*f*2,y:Math.sin(angle)*f*2});
+            }
+          }
+        }
+      });
+      if(clitBody){
+        const cd=Math.hypot(clitBody.position.x-userTouch.x,clitBody.position.y-userTouch.y);
+        if(cd<R*0.5){
+          Body.applyForce(clitBody,clitBody.position,{
+            x:(userTouch.x-clitBody.position.x)*0.00003,
+            y:(userTouch.y-clitBody.position.y)*0.00003
+          });
+        }
+      }
+      arousal=Math.min(1,arousal+0.015);
+      wet=Math.min(1,wet+0.012);
+      pulse=Math.min(1,pulse+0.04);
+    }
+  }
+
+  // === RENDER ===
+  // Feather mask: clear zone around pussy to blend with photo
+  ctx.save();
+  ctx.globalCompositeOperation='destination-out';
+  const maskR=R*2.2;
+  const mg=ctx.createRadialGradient(X,Y,R*0.6,X,Y,maskR);
+  mg.addColorStop(0,'rgba(0,0,0,1)');
+  mg.addColorStop(0.6,'rgba(0,0,0,0.8)');
+  mg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=mg;
+  ctx.beginPath();ctx.ellipse(X,Y,maskR,maskR*1.3,0,0,7);ctx.fill();
+  ctx.restore();
+
+  // Flush glow
+  const gg=ctx.createRadialGradient(X,Y,R*0.2,X,Y,R*2);
+  gg.addColorStop(0,`rgba(255,140,180,${0.08+arousal*0.25})`);
+  gg.addColorStop(1,'rgba(255,140,180,0)');
+  ctx.fillStyle=gg;
+  ctx.beginPath();ctx.ellipse(X,Y,R*2,R*2.5,0,0,7);ctx.fill();
+
+  // Draw soft body parts
+  drawSoftBodyCluster(outerLipL,0.1,wet);
+  drawSoftBodyCluster(outerLipR,0.1,wet);
+  drawSoftBodyCluster(innerLipL,0.4,wet);
+  drawSoftBodyCluster(innerLipR,0.4,wet);
+
+  // Entrance (deep)
+  const eW=R*(0.12+open*0.4),eH=R*(0.5+open*0.3);
+  const sc=skinColor(0.8,wet);
+  ctx.fillStyle=`rgb(${sc.r|0},${sc.g|0},${sc.b|0})`;
+  ctx.beginPath();ctx.ellipse(X,Y+R*0.1,eW,eH,0,0,7);ctx.fill();
+
+  // Wet highlight
+  if(wet>0.2){
+    ctx.globalCompositeOperation='screen';
+    ctx.fillStyle=`rgba(255,240,250,${wet*0.35})`;
+    ctx.beginPath();ctx.ellipse(X-eW*0.3,Y-R*0.2,eW*0.5,eH*0.3,0.3,0,7);ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+  }
+
+  // Clit
+  if(clitBody){
+    const cp=clitBody.position;
+    const csc=skinColor(0.3,wet);
+    ctx.fillStyle=`rgb(${csc.r|0},${csc.g|0},${csc.b|0})`;
+    const cR=R*0.09*(1+arousal*0.5);
+    ctx.beginPath();ctx.ellipse(cp.x,cp.y,cR,cR*1.3,0,0,7);ctx.fill();
+    // Clit hood
+    ctx.fillStyle=`rgb(${(csc.r-15)|0},${(csc.g-10)|0},${(csc.b-5)|0})`;
+    ctx.beginPath();ctx.ellipse(cp.x,cp.y-cR*0.5,cR*1.3,cR*0.6,0,Math.PI,0);ctx.fill();
+  }
+
+  // Self-touch fingers
+  if(selfTouchActive){
+    const fx=X+Math.cos(selfTouchAngle)*R*0.3;
+    const fy=Y-R*1.2+Math.sin(selfTouchAngle)*R*0.2;
+    ctx.fillStyle='rgba(250,210,195,0.85)';
+    ctx.beginPath();ctx.ellipse(fx,fy,R*0.07,R*0.18,selfTouchAngle*0.3,0,7);ctx.fill();
+    ctx.beginPath();ctx.ellipse(fx+R*0.1,fy+R*0.05,R*0.06,R*0.15,selfTouchAngle*0.3+0.2,0,7);ctx.fill();
+  }
+
+  // Fluids
+  if(wet>0.35&&Math.random()<wet*0.12){
+    fluids.push({x:X+(Math.random()-0.5)*R*0.3,y:Y+R*0.5,vy:0.3+Math.random()*0.5,life:1,w:1.5+Math.random()*2.5});
+  }
+  for(const f of fluids){
+    f.y+=f.vy;f.vy+=0.04;f.life-=0.005;
+    ctx.fillStyle=`rgba(200,225,255,${f.life*0.5})`;
+    ctx.beginPath();ctx.ellipse(f.x,f.y,f.w,f.w*2,0,0,7);ctx.fill();
+  }
+  fluids=fluids.filter(f=>f.life>0&&f.y<cv.height);
+
+  // Decay
+  if(!userTouch&&!selfTouchActive){arousal*=0.997;wet*=0.9993;pulse*=0.94;}
+
+  // HUD
+  fA.style.width=(arousal*100)+'%';
+  fW.style.width=(wet*100)+'%';
+  fP.style.width=(Math.abs(Math.sin(tt*2.4))*pulse*100)+'%';
+
+  requestAnimationFrame(draw);
+}
+
 function pos(e){const t=e.touches?e.touches[0]:e;return{x:t.clientX-box.x,y:t.clientY-box.y};}
-let dragStartY=0,dragR=0;
-cv.addEventListener('pointerdown',e=>{const p=pos(e);if(calib){PX=p.x/cv.width;PY=p.y/cv.height;dragStartY=p.y;dragR=PR;}else touch=p;});
-cv.addEventListener('pointermove',e=>{const p=pos(e);if(calib&&e.pressure>0){PR=Math.max(0.05,Math.min(0.30,dragR+(dragStartY-p.y)/cv.height));}else if(!calib)touch=p;});
-window.addEventListener('pointerup',()=>{if(calib){localStorage.setItem(KEY,JSON.stringify({x:PX,y:PY,r:PR}));}touch=null;});
-btn.onclick=()=>{calib=!calib;btn.textContent='Настройка: '+(calib?'ВКЛ':'ВЫКЛ');hint.style.display=calib?'block':'none';if(!calib){hint.textContent='';}};
+
+cv.addEventListener('pointerdown',e=>{
+  const p=pos(e);
+  if(calib){PX=p.x/cv.width;PY=p.y/cv.height;rebuildPhysics();}
+  else userTouch=p;
+});
+cv.addEventListener('pointermove',e=>{
+  const p=pos(e);
+  if(calib&&e.pressure>0){PR=Math.max(0.05,Math.min(0.30,PR));}
+  else userTouch=p;
+});
+window.addEventListener('pointerup',()=>{userTouch=null;});
+
+btn.onclick=()=>{
+  calib=!calib;
+  btn.textContent='Настройка: '+(calib?'ВКЛ':'ВЫКЛ');
+  hint.style.opacity=calib?'1':'0';
+  if(!calib)localStorage.setItem(KEY,JSON.stringify({x:PX,y:PY,r:PR}));
+};
+
+modeBtn.onclick=()=>{
+  modeIdx=(modeIdx+1)%3;
+  touchMode=['pet','thrust','circle'][modeIdx];
+  modeBtn.textContent='Режим: '+modes[modeIdx];
+};
+
 bg.onload=()=>{document.getElementById('load').style.display='none';fit();};
-bg.onerror=()=>{document.getElementById('load').textContent='Не удалось загрузить кадр 🌙';};
-bg.src=IMG_URL;draw();
+bg.onerror=()=>{document.getElementById('load').textContent='Ошибка загрузки 🌙';};
+bg.src=IMG_URL;
+draw();
 </script>
 </body>
 </html>
