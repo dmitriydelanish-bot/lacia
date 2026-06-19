@@ -6,68 +6,79 @@
 <title>Lacia</title>
 <style>
 html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;touch-action:none;font-family:sans-serif}
-#c{display:block;width:100vw;height:100vh;touch-action:none}
-#hud{position:fixed;left:12px;top:12px;color:#cfe3ff;font-size:13px;line-height:1.5;text-shadow:0 1px 3px #000;pointer-events:none}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#bg{position:absolute;max-width:100vw;max-height:100vh;object-fit:contain;user-select:none;-webkit-user-drag:none}
+#c{position:absolute;touch-action:none}
+#hud{position:fixed;left:12px;top:12px;color:#cfe3ff;font-size:13px;line-height:1.4;text-shadow:0 1px 3px #000;pointer-events:none;z-index:5}
 .bar{width:120px;height:6px;background:#ffffff22;border-radius:3px;margin:2px 0 8px}
-.fill{height:100%;border-radius:3px;width:0%}
-#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9fc4ff;font-size:15px}
+.fill{height:100%;border-radius:3px;width:0%;transition:width .12s}
+#hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#9fc4ff;font-size:12px;pointer-events:none;z-index:5}
+#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9fc4ff;font-size:15px;z-index:9}
 </style>
 </head>
 <body>
 <div id="load">Lacia загружается… 🌙</div>
-<canvas id="c"></canvas>
+<div id="wrap"><img id="bg" crossorigin="anonymous"><canvas id="c"></canvas></div>
 <div id="hud">
 <div>Возбуждение</div><div class="bar"><div class="fill" id="fA" style="background:#ff6fae"></div></div>
 <div>Влага</div><div class="bar"><div class="fill" id="fW" style="background:#56bdf7"></div></div>
 <div>Пульс</div><div class="bar"><div class="fill" id="fP" style="background:#ff9a6f"></div></div>
 </div>
+<div id="hint">Касайся центра — ласкай 🌙</div>
 <script>
 const IMG_URL="https://mira-bot.api.newcoolproject.io/api/v1/media/f15X2mFnfn42";
-const cv=document.getElementById('c'),ctx=cv.getContext('2d');
-let W,H,DPR;
-function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
-window.addEventListener('resize',resize);
-// softbody grid
-const COLS=18,ROWS=24;let pts=[],img=new Image();img.crossOrigin='anonymous';
-let imgW=0,imgH=0,offX=0,offY=0,drawW=0,drawH=0;
-function layout(){if(!imgW)return;const ar=imgW/imgH,car=W/H;if(ar>car){drawH=H;drawW=H*ar;}else{drawW=W;drawH=W/ar;}offX=(W-drawW)/2;offY=(H-drawH)/2;buildGrid();}
-function buildGrid(){pts=[];for(let y=0;y<=ROWS;y++){for(let x=0;x<=COLS;x++){const px=offX+drawW*x/COLS,py=offY+drawH*y/ROWS;pts.push({x:px,y:py,ox:px,oy:py,vx:0,vy:0,u:x/COLS,v:y/ROWS});}}}
-function idx(x,y){return y*(COLS+1)+x;}
-let arousal=0,wet=0,pulse=0,touch=null,tt=0;
-function phys(){for(const p of pts){let fx=(p.ox-p.x)*0.12,fy=(p.oy-p.y)*0.12;if(touch){const dx=p.x-touch.x,dy=p.y-touch.y,d=Math.hypot(dx,dy);if(d<90){const f=(1-d/90)*6;fx+=dx/(d+1)*f;fy+=dy/(d+1)*f;}}p.vx=(p.vx+fx)*0.9;p.vy=(p.vy+fy)*0.9;p.x+=p.vx;p.y+=p.vy;}}
-function draw(){ctx.clearRect(0,0,W,H);if(!imgW){requestAnimationFrame(draw);return;}
-// pulse breathing
-tt+=0.05;const breathe=Math.sin(tt)*(0.4+arousal*1.4);
-for(let y=0;y<ROWS;y++){for(let x=0;x<COLS;x++){
-const a=pts[idx(x,y)],b=pts[idx(x+1,y)],c=pts[idx(x+1,y+1)],dd=pts[idx(x,y+1)];
-const sx=a.u*imgW,sy=a.v*imgH,sw=imgW/COLS,sh=imgH/ROWS;
-drawQuad(a,b,c,dd,sx,sy,sw,sh);}}
-// soft glow when aroused
-if(arousal>0.05){ctx.save();ctx.globalCompositeOperation='soft-light';ctx.fillStyle='rgba(255,120,180,'+(arousal*0.25)+')';ctx.fillRect(offX,offY,drawW,drawH);ctx.restore();}
-phys();
-if(touch){arousal=Math.min(1,arousal+0.01);wet=Math.min(1,wet+0.008);pulse=Math.min(1,pulse+0.02);}else{arousal*=0.997;wet*=0.999;pulse*=0.96;}
-fA.style.width=(arousal*100)+'%';fW.style.width=(wet*100)+'%';fP.style.width=(Math.abs(Math.sin(tt*2))*pulse*100)+'%';
+const bg=document.getElementById('bg'),cv=document.getElementById('c'),ctx=cv.getContext('2d');
+// position of pussy on the image, as fractions of image box (tune by eye)
+let PX=0.5,PY=0.62,PR=0.16; // center x,y and radius rel to displayed image width
+let box={x:0,y:0,w:0,h:0};
+function fit(){const r=bg.getBoundingClientRect();box={x:r.left,y:r.top,w:r.width,h:r.height};cv.style.left=r.left+'px';cv.style.top=r.top+'px';cv.width=r.width;cv.height=r.height;cv.style.width=r.width+'px';cv.style.height=r.height+'px';}
+window.addEventListener('resize',()=>{fit();});
+let arousal=0,wet=0,pulse=0,open=0,touch=null,tt=0,fluids=[];
+function cx(){return PX*cv.width;}function cy(){return PY*cv.height;}function rad(){return PR*cv.width;}
+function draw(){
+tt+=0.05;ctx.clearRect(0,0,cv.width,cv.height);
+const X=cx(),Y=cy(),R=rad();
+const breathe=Math.sin(tt*1.4)*(2+pulse*4);
+open+= ((touchNear()?(0.4+arousal*0.6):0.05*arousal)-open)*0.08;
+// outer flushed glow
+let g=ctx.createRadialGradient(X,Y,R*0.3,X,Y,R*1.8);
+g.addColorStop(0,'rgba(255,140,180,'+(0.10+arousal*0.30)+')');g.addColorStop(1,'rgba(255,140,180,0)');
+ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(X,Y,R*1.8,R*2.1,0,0,7);ctx.fill();
+// outer lips
+ctx.save();ctx.translate(X,Y+breathe);
+const lipW=R*(0.95+open*0.10),lipH=R*1.7;
+let lg=ctx.createLinearGradient(-lipW,0,lipW,0);
+lg.addColorStop(0,'#e89a93');lg.addColorStop(0.5,'#fbc0c0');lg.addColorStop(1,'#e89a93');
+ctx.fillStyle=lg;ctx.beginPath();ctx.ellipse(0,0,lipW,lipH,0,0,7);ctx.fill();
+// inner opening (grows with open)
+const iw=R*(0.18+open*0.55),ih=lipH*(0.78);
+let ig=ctx.createLinearGradient(0,-ih,0,ih);
+ig.addColorStop(0,'#c25b6a');ig.addColorStop(0.5,'#9c3b52');ig.addColorStop(1,'#7e2c45');
+ctx.fillStyle=ig;ctx.beginPath();ctx.ellipse(0,0,iw,ih,0,0,7);ctx.fill();
+// wet sheen highlight
+ctx.globalCompositeOperation='screen';
+ctx.fillStyle='rgba(255,235,245,'+(0.12+wet*0.4)+')';
+ctx.beginPath();ctx.ellipse(-iw*0.3,-ih*0.3,iw*0.4,ih*0.3,0.4,0,7);ctx.fill();
+ctx.globalCompositeOperation='source-over';
+// clit nub at top
+ctx.fillStyle='#f4a8b4';ctx.beginPath();ctx.ellipse(0,-lipH*0.78,R*0.10*(1+arousal*0.4),R*0.12*(1+arousal*0.4),0,0,7);ctx.fill();
+ctx.restore();
+// fluids dripping
+if(wet>0.4&&Math.random()<wet*0.15){fluids.push({x:X+(Math.random()-0.5)*R*0.4,y:Y+lipH*0.6,vy:0.5+Math.random(),life:1,w:2+Math.random()*3});}
+for(const f of fluids){f.y+=f.vy;f.vy+=0.05;f.life-=0.006;ctx.fillStyle='rgba(200,225,255,'+(f.life*0.6)+')';ctx.beginPath();ctx.ellipse(f.x,f.y,f.w,f.w*2.2,0,0,7);ctx.fill();}
+fluids=fluids.filter(f=>f.life>0&&f.y<cv.height);
+// metrics
+if(touchNear()){arousal=Math.min(1,arousal+0.012);wet=Math.min(1,wet+0.010);pulse=Math.min(1,pulse+0.03);}else{arousal*=0.998;wet*=0.9995;pulse*=0.95;}
+fA.style.width=(arousal*100)+'%';fW.style.width=(wet*100)+'%';fP.style.width=(Math.abs(Math.sin(tt*2.4))*pulse*100)+'%';
 requestAnimationFrame(draw);}
-function drawQuad(a,b,c,d,sx,sy,sw,sh){
-// affine-ish split into 2 triangles for image mapping
-tri(a,b,d,sx,sy,sx+sw,sy,sx,sy+sh);
-tri(b,c,d,sx+sw,sy,sx+sw,sy+sh,sx,sy+sh);}
-function tri(p0,p1,p2,u0,v0,u1,v1,u2,v2){
-ctx.save();ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.closePath();ctx.clip();
-const dx1=p1.x-p0.x,dy1=p1.y-p0.y,dx2=p2.x-p0.x,dy2=p2.y-p0.y;
-const du1=u1-u0,dv1=v1-v0,du2=u2-u0,dv2=v2-v0;
-const det=du1*dv2-du2*dv1;if(Math.abs(det)<0.01){ctx.restore();return;}
-const a11=(dx1*dv2-dx2*dv1)/det,a12=(dx2*du1-dx1*du2)/det,a21=(dy1*dv2-dy2*dv1)/det,a22=(dy2*du1-dy1*du2)/det;
-const e=p0.x-a11*u0-a12*v0,f=p0.y-a21*u0-a22*v0;
-ctx.setTransform(a11*DPR,a21*DPR,a12*DPR,a22*DPR,e*DPR,f*DPR);ctx.drawImage(img,0,0);ctx.restore();ctx.setTransform(DPR,0,0,DPR,0,0);}
-function pos(e){const t=e.touches?e.touches[0]:e;const r=cv.getBoundingClientRect();return{x:t.clientX-r.left,y:t.clientY-r.top};}
+function touchNear(){if(!touch)return false;return Math.hypot(touch.x-cx(),touch.y-cy())<rad()*2;}
+function pos(e){const t=e.touches?e.touches[0]:e;return{x:t.clientX-box.x,y:t.clientY-box.y};}
 cv.addEventListener('pointerdown',e=>{touch=pos(e);});
-cv.addEventListener('pointermove',e=>{if(touch||e.pressure>0)touch=pos(e);});
-cv.addEventListener('pointerup',()=>{touch=null;});
-cv.addEventListener('pointerleave',()=>{touch=null;});
-img.onload=()=>{imgW=img.naturalWidth;imgH=img.naturalHeight;document.getElementById('load').style.display='none';resize();layout();};
-img.onerror=()=>{document.getElementById('load').textContent='Не удалось загрузить кадр 🌙';};
-resize();img.src=IMG_URL;draw();
+cv.addEventListener('pointermove',e=>{touch=pos(e);});
+window.addEventListener('pointerup',()=>{touch=null;});
+bg.onload=()=>{document.getElementById('load').style.display='none';fit();};
+bg.onerror=()=>{document.getElementById('load').textContent='Не удалось загрузить кадр 🌙';};
+bg.src=IMG_URL;draw();
 </script>
 </body>
 </html>
