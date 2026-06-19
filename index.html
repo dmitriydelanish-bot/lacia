@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lacia Module</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#05060a; font-family:'Segoe UI',sans-serif; }
+  #c { display:block; width:100vw; height:100vh; touch-action:none; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:10px 14px; pointer-events:none; color:#9fe7ff; font-size:12px; letter-spacing:1px; text-shadow:0 0 6px #1a4a66; }
+  .bar { height:6px; background:rgba(159,231,255,.12); border-radius:3px; margin:3px 0 8px; overflow:hidden; }
+  .fill { height:100%; width:0%; border-radius:3px; transition:width .12s linear; }
+  .lbl { display:flex; justify-content:space-between; opacity:.85; }
+  #peak { position:fixed; bottom:18px; left:0; right:0; text-align:center; color:#ffd0e8; font-size:13px; letter-spacing:2px; opacity:0; transition:opacity .3s; pointer-events:none; text-shadow:0 0 10px #ff7ab8; }
+  #hint { position:fixed; bottom:46px; left:0; right:0; text-align:center; color:#5a7a8a; font-size:11px; pointer-events:none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="lbl"><span>AROUSAL</span><span id="vA">0%</span></div><div class="bar"><div class="fill" id="fA" style="background:linear-gradient(90deg,#9fe7ff,#ff7ab8)"></div></div>
+  <div class="lbl"><span>WETNESS</span><span id="vW">0%</span></div><div class="bar"><div class="fill" id="fW" style="background:linear-gradient(90deg,#9fe7ff,#bff)"></div></div>
+  <div class="lbl"><span>TEMP</span><span id="vT">36.5</span></div><div class="bar"><div class="fill" id="fT" style="background:linear-gradient(90deg,#9fe7ff,#ffb27a)"></div></div>
+  <div class="lbl"><span>PULSE</span><span id="vP">72</span></div><div class="bar"><div class="fill" id="fP" style="background:linear-gradient(90deg,#9fe7ff,#ff7a7a)"></div></div>
+</div>
+<div id="peak">CLIMAX</div>
+<div id="hint">прикасайся и веди пальцем • удержание на грани = edging</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+let S={arousal:0,wet:0,temp:36.5,pulse:72,squeeze:0,edge:0,climax:0,blush:0,tremor:0,touching:false,tx:0,ty:0,lastMove:0,sensitivity:1,autotouch:0,autoT:0};
+let drops=[];
+const cx=()=>W/2, cy=()=>H/2+20;
+function clamp(v,a,b){return v<a?a:v>b?b:v;}
+let pointers={};
+cv.addEventListener('pointerdown',e=>{pointers[e.pointerId]={x:e.clientX,y:e.clientY};S.touching=true;S.tx=e.clientX;S.ty=e.clientY;S.lastMove=performance.now();});
+cv.addEventListener('pointermove',e=>{if(!pointers[e.pointerId])return;const p=pointers[e.pointerId];const dx=e.clientX-p.x,dy=e.clientY-p.y;const sp=Math.hypot(dx,dy);p.x=e.clientX;p.y=e.clientY;S.tx=e.clientX;S.ty=e.clientY;S.lastMove=performance.now();const dist=Math.hypot(e.clientX-cx(),e.clientY-cy());const near=clamp(1-dist/180,0,1);const multi=Object.keys(pointers).length>1?1.8:1;S.arousal=clamp(S.arousal+sp*0.0016*near*multi*S.sensitivity,0,1);S.wet=clamp(S.wet+sp*0.0010*near,0,1);S.temp=clamp(S.temp+sp*0.0004*near,36.5,39.5);S.tremor=clamp(S.tremor+sp*0.004*near,0,1);if(S.arousal>0.7&&Math.random()<0.25)spawnDrop();});
+function up(e){delete pointers[e.pointerId];if(!Object.keys(pointers).length)S.touching=false;}
+cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+function spawnDrop(){drops.push({x:cx()+(Math.random()-.5)*30,y:cy()+30,vy:0.4+Math.random(),a:1,r:2+Math.random()*3});}
+function tick(t){
+  const now=performance.now();
+  const idle=now-S.lastMove;
+  if(idle>900){S.autoT+=0.02;S.autotouch=(Math.sin(S.autoT)*0.5+0.5);if(S.arousal>0.05){S.arousal=clamp(S.arousal+S.autotouch*0.0018,0,1);S.wet=clamp(S.wet+S.autotouch*0.0008,0,1);if(Math.random()<0.08&&S.arousal>0.6)spawnDrop();}}
+  S.arousal=clamp(S.arousal-0.0016,0,1);
+  S.wet=clamp(S.wet-0.0006,0,1);
+  S.temp=clamp(S.temp-0.0009,36.5,39.5);
+  S.pulse=72+S.arousal*68;
+  S.squeeze=S.arousal*S.arousal;
+  S.blush+=((S.arousal)-S.blush)*0.05;
+  S.tremor=clamp(S.tremor-0.02,0,1);
+  if(S.arousal>0.9){S.edge=clamp(S.edge+0.01,0,1);}
+  if(S.arousal>=0.985&&S.climax<=0){S.climax=1;flashPeak();for(let i=0;i<40;i++)spawnDrop();S.sensitivity=Math.min(S.sensitivity+0.3,2.2);}
+  if(S.climax>0){S.climax-=0.012;if(S.climax<0)S.climax=0;S.arousal=clamp(S.arousal-0.02,0,1);}
+  draw(t);updHUD();requestAnimationFrame(tick);
+}
+function draw(t){
+  ctx.clearRect(0,0,W,H);const X=cx(),Y=cy();const tr=(Math.sin(t*0.04)*S.tremor*3);const hue=S.climax>0?330:(200-S.blush*40);
+  const g=ctx.createRadialGradient(X,Y,10,X,Y,200);g.addColorStop(0,`hsla(${hue},90%,70%,${0.25+S.arousal*0.4})`);g.addColorStop(1,'hsla(210,90%,50%,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.save();ctx.translate(X+tr,Y);
+  const grad=ctx.createLinearGradient(0,-130,0,130);grad.addColorStop(0,`hsl(${hue},45%,${88-S.blush*10}%)`);grad.addColorStop(.5,`hsl(${hue},55%,${80-S.blush*14}%)`);grad.addColorStop(1,`hsl(${hue},40%,${72-S.blush*10}%)`);ctx.fillStyle=grad;
+  ctx.beginPath();ctx.moveTo(0,-130);ctx.bezierCurveTo(90,-110,95,90,0,130);ctx.bezierCurveTo(-95,90,-90,-110,0,-130);ctx.fill();
+  ctx.strokeStyle=`hsla(195,100%,75%,${0.18+S.arousal*0.3})`;ctx.lineWidth=1;
+  for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(i*22,-120);ctx.bezierCurveTo(i*30,0,i*30,0,i*22,120);ctx.stroke();}
+  const open=8+S.arousal*26-S.squeeze*8;
+  const cg=ctx.createLinearGradient(0,-60,0,80);cg.addColorStop(0,`hsl(330,60%,${60+S.wet*15}%)`);cg.addColorStop(1,`hsl(340,65%,${42+S.wet*10}%)`);ctx.fillStyle=cg;
+  ctx.beginPath();ctx.moveTo(0,-70);ctx.bezierCurveTo(open,-30,open,60,0,90);ctx.bezierCurveTo(-open,60,-open,-30,0,-70);ctx.fill();
+  ctx.fillStyle=`hsla(190,100%,90%,${S.wet*0.5})`;ctx.beginPath();ctx.ellipse(-open*0.3,20,open*0.4,30,0,0,7);ctx.fill();
+  ctx.fillStyle=`hsl(335,70%,${65+S.arousal*15}%)`;ctx.beginPath();ctx.arc(0,-66,3+S.arousal*3,0,7);ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='hsla(190,100%,85%,0.7)';
+  for(let i=drops.length-1;i>=0;i--){const d=drops[i];d.y+=d.vy;d.vy+=0.05;d.a-=0.006;if(d.a<=0||d.y>H){drops.splice(i,1);continue;}ctx.globalAlpha=d.a;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,7);ctx.fill();}
+  ctx.globalAlpha=1;
+  if(S.touching){ctx.strokeStyle='hsla(195,100%,80%,0.6)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(S.tx,S.ty,18,0,7);ctx.stroke();}
+}
+function updHUD(){
+  document.getElementById('fA').style.width=(S.arousal*100)+'%';document.getElementById('vA').textContent=Math.round(S.arousal*100)+'%';
+  document.getElementById('fW').style.width=(S.wet*100)+'%';document.getElementById('vW').textContent=Math.round(S.wet*100)+'%';
+  document.getElementById('fT').style.width=((S.temp-36.5)/3*100)+'%';document.getElementById('vT').textContent=S.temp.toFixed(1);
+  document.getElementById('fP').style.width=((S.pulse-72)/68*100)+'%';document.getElementById('vP').textContent=Math.round(S.pulse);
+}
+let peakTO;function flashPeak(){const p=document.getElementById('peak');p.style.opacity=1;clearTimeout(peakTO);peakTO=setTimeout(()=>p.style.opacity=0,1400);}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
