@@ -12,70 +12,75 @@ html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;touch-action:n
 #hud{position:fixed;left:12px;top:12px;color:#cfe3ff;font-size:13px;line-height:1.4;text-shadow:0 1px 3px #000;pointer-events:none;z-index:5}
 .bar{width:120px;height:6px;background:#ffffff22;border-radius:3px;margin:2px 0 8px}
 .fill{height:100%;border-radius:3px;width:0%;transition:width .12s}
-#hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#9fc4ff;font-size:12px;pointer-events:none;z-index:5}
+#hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#ffe08a;font-size:12px;pointer-events:none;z-index:5}
+#btn{position:fixed;right:12px;top:12px;z-index:6;background:#ffffff18;color:#cfe3ff;border:1px solid #ffffff33;border-radius:8px;padding:7px 10px;font-size:12px}
 #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9fc4ff;font-size:15px;z-index:9}
 </style>
 </head>
 <body>
 <div id="load">Lacia загружается… 🌙</div>
 <div id="wrap"><img id="bg" crossorigin="anonymous"><canvas id="c"></canvas></div>
+<button id="btn">Настройка: ВКЛ</button>
 <div id="hud">
 <div>Возбуждение</div><div class="bar"><div class="fill" id="fA" style="background:#ff6fae"></div></div>
 <div>Влага</div><div class="bar"><div class="fill" id="fW" style="background:#56bdf7"></div></div>
 <div>Пульс</div><div class="bar"><div class="fill" id="fP" style="background:#ff9a6f"></div></div>
 </div>
-<div id="hint">Касайся центра — ласкай 🌙</div>
+<div id="hint">РЕЖИМ НАСТРОЙКИ: тапни по киске на фото • свайп вверх/вниз = размер</div>
 <script>
 const IMG_URL="https://mira-bot.api.newcoolproject.io/api/v1/media/f15X2mFnfn42";
-const bg=document.getElementById('bg'),cv=document.getElementById('c'),ctx=cv.getContext('2d');
-// position of pussy on the image, as fractions of image box (tune by eye)
-let PX=0.5,PY=0.62,PR=0.16; // center x,y and radius rel to displayed image width
+const bg=document.getElementById('bg'),cv=document.getElementById('c'),ctx=cv.getContext('2d'),btn=document.getElementById('btn'),hint=document.getElementById('hint');
+const KEY='lacia_pos';let saved=JSON.parse(localStorage.getItem(KEY)||'null');
+let PX=saved?saved.x:0.5,PY=saved?saved.y:0.62,PR=saved?saved.r:0.13;
+let calib=true;
 let box={x:0,y:0,w:0,h:0};
 function fit(){const r=bg.getBoundingClientRect();box={x:r.left,y:r.top,w:r.width,h:r.height};cv.style.left=r.left+'px';cv.style.top=r.top+'px';cv.width=r.width;cv.height=r.height;cv.style.width=r.width+'px';cv.style.height=r.height+'px';}
-window.addEventListener('resize',()=>{fit();});
+window.addEventListener('resize',fit);
 let arousal=0,wet=0,pulse=0,open=0,touch=null,tt=0,fluids=[];
+let selfX=0,selfY=0; // self-touch finger offset
 function cx(){return PX*cv.width;}function cy(){return PY*cv.height;}function rad(){return PR*cv.width;}
+function touchNear(){if(!touch)return false;return Math.hypot(touch.x-cx(),touch.y-cy())<rad()*2.2;}
 function draw(){
 tt+=0.05;ctx.clearRect(0,0,cv.width,cv.height);
 const X=cx(),Y=cy(),R=rad();
+if(calib){ctx.strokeStyle='#ffe08a';ctx.lineWidth=2;ctx.setLineDash([6,5]);ctx.beginPath();ctx.ellipse(X,Y,R,R*1.7,0,0,7);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ffe08a';ctx.font='12px sans-serif';ctx.textAlign='center';ctx.fillText('здесь киска?',X,Y-R*1.7-8);requestAnimationFrame(draw);return;}
 const breathe=Math.sin(tt*1.4)*(2+pulse*4);
-open+= ((touchNear()?(0.4+arousal*0.6):0.05*arousal)-open)*0.08;
-// outer flushed glow
-let g=ctx.createRadialGradient(X,Y,R*0.3,X,Y,R*1.8);
-g.addColorStop(0,'rgba(255,140,180,'+(0.10+arousal*0.30)+')');g.addColorStop(1,'rgba(255,140,180,0)');
-ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(X,Y,R*1.8,R*2.1,0,0,7);ctx.fill();
-// outer lips
+// autonomous self-touch when user idle
+const selfActive=!touch&&arousal<0.95;
+if(selfActive){const sp=tt*2.2;selfX=Math.cos(sp)*R*0.5;selfY=-R*1.0+Math.sin(sp)*R*0.35;arousal=Math.min(0.9,arousal+0.004);wet=Math.min(0.9,wet+0.003);pulse=Math.min(0.8,pulse+0.012);}
+open+=((touchNear()?(0.4+arousal*0.6):(0.15+arousal*0.45))-open)*0.08;
+let g=ctx.createRadialGradient(X,Y,R*0.3,X,Y,R*1.9);
+g.addColorStop(0,'rgba(255,140,180,'+(0.10+arousal*0.32)+')');g.addColorStop(1,'rgba(255,140,180,0)');
+ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(X,Y,R*1.9,R*2.2,0,0,7);ctx.fill();
 ctx.save();ctx.translate(X,Y+breathe);
 const lipW=R*(0.95+open*0.10),lipH=R*1.7;
 let lg=ctx.createLinearGradient(-lipW,0,lipW,0);
-lg.addColorStop(0,'#e89a93');lg.addColorStop(0.5,'#fbc0c0');lg.addColorStop(1,'#e89a93');
+lg.addColorStop(0,'#dd9089');lg.addColorStop(0.5,'#f7bcbc');lg.addColorStop(1,'#dd9089');
 ctx.fillStyle=lg;ctx.beginPath();ctx.ellipse(0,0,lipW,lipH,0,0,7);ctx.fill();
-// inner opening (grows with open)
-const iw=R*(0.18+open*0.55),ih=lipH*(0.78);
+const iw=R*(0.18+open*0.55),ih=lipH*0.78;
 let ig=ctx.createLinearGradient(0,-ih,0,ih);
 ig.addColorStop(0,'#c25b6a');ig.addColorStop(0.5,'#9c3b52');ig.addColorStop(1,'#7e2c45');
 ctx.fillStyle=ig;ctx.beginPath();ctx.ellipse(0,0,iw,ih,0,0,7);ctx.fill();
-// wet sheen highlight
 ctx.globalCompositeOperation='screen';
 ctx.fillStyle='rgba(255,235,245,'+(0.12+wet*0.4)+')';
 ctx.beginPath();ctx.ellipse(-iw*0.3,-ih*0.3,iw*0.4,ih*0.3,0.4,0,7);ctx.fill();
 ctx.globalCompositeOperation='source-over';
-// clit nub at top
 ctx.fillStyle='#f4a8b4';ctx.beginPath();ctx.ellipse(0,-lipH*0.78,R*0.10*(1+arousal*0.4),R*0.12*(1+arousal*0.4),0,0,7);ctx.fill();
+// self-touch fingers
+if(selfActive){ctx.fillStyle='rgba(250,210,195,0.9)';ctx.beginPath();ctx.ellipse(selfX,selfY,R*0.13,R*0.30,0.3,0,7);ctx.fill();ctx.beginPath();ctx.ellipse(selfX+R*0.18,selfY+R*0.1,R*0.11,R*0.26,0.3,0,7);ctx.fill();}
 ctx.restore();
-// fluids dripping
 if(wet>0.4&&Math.random()<wet*0.15){fluids.push({x:X+(Math.random()-0.5)*R*0.4,y:Y+lipH*0.6,vy:0.5+Math.random(),life:1,w:2+Math.random()*3});}
 for(const f of fluids){f.y+=f.vy;f.vy+=0.05;f.life-=0.006;ctx.fillStyle='rgba(200,225,255,'+(f.life*0.6)+')';ctx.beginPath();ctx.ellipse(f.x,f.y,f.w,f.w*2.2,0,0,7);ctx.fill();}
 fluids=fluids.filter(f=>f.life>0&&f.y<cv.height);
-// metrics
-if(touchNear()){arousal=Math.min(1,arousal+0.012);wet=Math.min(1,wet+0.010);pulse=Math.min(1,pulse+0.03);}else{arousal*=0.998;wet*=0.9995;pulse*=0.95;}
+if(touchNear()){arousal=Math.min(1,arousal+0.014);wet=Math.min(1,wet+0.011);pulse=Math.min(1,pulse+0.035);}else if(!selfActive){arousal*=0.998;wet*=0.9995;pulse*=0.95;}
 fA.style.width=(arousal*100)+'%';fW.style.width=(wet*100)+'%';fP.style.width=(Math.abs(Math.sin(tt*2.4))*pulse*100)+'%';
 requestAnimationFrame(draw);}
-function touchNear(){if(!touch)return false;return Math.hypot(touch.x-cx(),touch.y-cy())<rad()*2;}
 function pos(e){const t=e.touches?e.touches[0]:e;return{x:t.clientX-box.x,y:t.clientY-box.y};}
-cv.addEventListener('pointerdown',e=>{touch=pos(e);});
-cv.addEventListener('pointermove',e=>{touch=pos(e);});
-window.addEventListener('pointerup',()=>{touch=null;});
+let dragStartY=0,dragR=0;
+cv.addEventListener('pointerdown',e=>{const p=pos(e);if(calib){PX=p.x/cv.width;PY=p.y/cv.height;dragStartY=p.y;dragR=PR;}else touch=p;});
+cv.addEventListener('pointermove',e=>{const p=pos(e);if(calib&&e.pressure>0){PR=Math.max(0.05,Math.min(0.30,dragR+(dragStartY-p.y)/cv.height));}else if(!calib)touch=p;});
+window.addEventListener('pointerup',()=>{if(calib){localStorage.setItem(KEY,JSON.stringify({x:PX,y:PY,r:PR}));}touch=null;});
+btn.onclick=()=>{calib=!calib;btn.textContent='Настройка: '+(calib?'ВКЛ':'ВЫКЛ');hint.style.display=calib?'block':'none';if(!calib){hint.textContent='';}};
 bg.onload=()=>{document.getElementById('load').style.display='none';fit();};
 bg.onerror=()=>{document.getElementById('load').textContent='Не удалось загрузить кадр 🌙';};
 bg.src=IMG_URL;draw();
