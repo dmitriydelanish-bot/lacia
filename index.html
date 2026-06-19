@@ -2,205 +2,72 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Lacia</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{width:100%;height:100%;overflow:hidden;background:#060912;font-family:'Segoe UI',sans-serif;}
-  #c{display:block;width:100vw;height:100vh;touch-action:none;}
-  #hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;pointer-events:none;color:#bfe7ff;font-size:9px;letter-spacing:1px;text-shadow:0 0 6px #1a4a66;}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;}
-  .bar{height:4px;background:rgba(160,206,239,.12);border-radius:3px;margin:2px 0 5px;overflow:hidden;}
-  .fill{height:100%;width:0%;border-radius:3px;transition:width .12s linear;}
-  .lbl{display:flex;justify-content:space-between;opacity:.85;}
-  #mode{position:fixed;top:118px;left:0;right:0;text-align:center;color:#aee7ff;font-size:11px;letter-spacing:2px;opacity:.7;pointer-events:none;text-shadow:0 0 8px #1a4a66;}
-  #peak{position:fixed;bottom:42px;left:0;right:0;text-align:center;color:#ffd0e8;font-size:15px;letter-spacing:3px;opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 0 14px #ff7ab8;}
-  #hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#5a7a8a;font-size:9px;pointer-events:none;}
+html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;touch-action:none;font-family:sans-serif}
+#c{display:block;width:100vw;height:100vh;touch-action:none}
+#hud{position:fixed;left:12px;top:12px;color:#cfe3ff;font-size:13px;line-height:1.5;text-shadow:0 1px 3px #000;pointer-events:none}
+.bar{width:120px;height:6px;background:#ffffff22;border-radius:3px;margin:2px 0 8px}
+.fill{height:100%;border-radius:3px;width:0%}
+#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9fc4ff;font-size:15px}
 </style>
 </head>
 <body>
+<div id="load">Lacia загружается… 🌙</div>
 <canvas id="c"></canvas>
 <div id="hud">
-  <div class="row">
-    <div><div class="lbl"><span>AROUSAL</span><span id="vA">0%</span></div><div class="bar"><div class="fill" id="fA" style="background:linear-gradient(90deg,#A9CEEF,#ff7ab8)"></div></div></div>
-    <div><div class="lbl"><span>WETNESS</span><span id="vW">0%</span></div><div class="bar"><div class="fill" id="fW" style="background:linear-gradient(90deg,#A9CEEF,#8ADCFC)"></div></div></div>
-    <div><div class="lbl"><span>TEMP</span><span id="vT">36.5</span></div><div class="bar"><div class="fill" id="fT" style="background:linear-gradient(90deg,#A9CEEF,#ffb27a)"></div></div></div>
-    <div><div class="lbl"><span>PULSE</span><span id="vP">72</span></div><div class="bar"><div class="fill" id="fP" style="background:linear-gradient(90deg,#A9CEEF,#ff7a7a)"></div></div></div>
-    <div><div class="lbl"><span>SELF</span><span id="vSf">0%</span></div><div class="bar"><div class="fill" id="fSf" style="background:linear-gradient(90deg,#A9CEEF,#ff9ad8)"></div></div></div>
-    <div><div class="lbl"><span>BREATH</span><span id="vB">0%</span></div><div class="bar"><div class="fill" id="fB" style="background:linear-gradient(90deg,#A9CEEF,#aee7ff)"></div></div></div>
-    <div><div class="lbl"><span>STRETCH</span><span id="vSt">0%</span></div><div class="bar"><div class="fill" id="fSt" style="background:linear-gradient(90deg,#A9CEEF,#c8a9ef)"></div></div></div>
-    <div><div class="lbl"><span>EDGE</span><span id="vE">0%</span></div><div class="bar"><div class="fill" id="fE" style="background:linear-gradient(90deg,#A9CEEF,#ff5ea8)"></div></div></div>
-  </div>
+<div>Возбуждение</div><div class="bar"><div class="fill" id="fA" style="background:#ff6fae"></div></div>
+<div>Влага</div><div class="bar"><div class="fill" id="fW" style="background:#56bdf7"></div></div>
+<div>Пульс</div><div class="bar"><div class="fill" id="fP" style="background:#ff9a6f"></div></div>
 </div>
-<div id="mode">— покой —</div>
-<div id="peak">CLIMAX</div>
-<div id="hint">трогай и веди • перетащи объект снизу внутрь — войдёт туго • замри — я ласкаю себя сама</div>
 <script>
+const IMG_URL="https://mira-bot.api.newcoolproject.io/api/v1/media/f15X2mFnfn42";
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 let W,H,DPR;
-function rs(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
-addEventListener('resize',rs);rs();
-function clamp(v,a,b){return v<a?a:v>b?b:v;}
-const cx=()=>W/2,cy=()=>H/2;
-let S={ar:0,wet:0,temp:36.5,pulse:72,self:0,breath:0,stretch:0,edge:0,climax:0,blush:0,tremor:0,squeeze:0,
-        touch:false,tx:0,ty:0,last:0,autoP:0,phase:0};
-let drops=[],ripples=[],strands=[];
-// self-touch fingers (orbit the form, caress)
-let fingers=[{a:0,sp:0.9,r:60,depth:0},{a:2.1,sp:1.3,r:46,depth:0},{a:4.2,sp:0.7,r:74,depth:0}];
-// abstract object (draggable from bottom)
-let obj={x:0,y:200,grab:false,inside:0,resist:0};
-function objHome(){obj.x=cx();obj.y=cy()+200;}
-let ptr={};
-function multi(){return Object.keys(ptr).length>1?1.8:1;}
-function nearObj(x,y){return Math.hypot(x-obj.x,y-obj.y)<46;}
-cv.addEventListener('pointerdown',e=>{ptr[e.pointerId]={x:e.clientX,y:e.clientY};
-  if(nearObj(e.clientX,e.clientY)){obj.grab=true;obj.pid=e.pointerId;return;}
-  S.touch=true;S.tx=e.clientX;S.ty=e.clientY;S.last=performance.now();ripples.push({x:e.clientX,y:e.clientY,r:6,a:.7});});
-cv.addEventListener('pointermove',e=>{const p=ptr[e.pointerId];if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y,sp=Math.hypot(dx,dy);p.x=e.clientX;p.y=e.clientY;
-  if(obj.grab&&obj.pid===e.pointerId){obj.x=e.clientX;obj.y=e.clientY;return;}
-  S.tx=e.clientX;S.ty=e.clientY;S.last=performance.now();
-  const dist=Math.hypot(e.clientX-cx(),e.clientY-cy());const near=clamp(1-dist/190,0,1);const m=multi();
-  S.ar=clamp(S.ar+sp*0.0016*near*m,0,1);S.wet=clamp(S.wet+sp*0.0011*near,0,1);
-  S.temp=clamp(S.temp+sp*0.0004*near,36.5,39.9);S.tremor=clamp(S.tremor+sp*0.004*near,0,1);
-  if(near>0.3&&sp>2)ripples.push({x:e.clientX,y:e.clientY,r:4,a:.5});
-  if(S.ar>0.6&&Math.random()<0.3)spawnStrand();});
-function pu(e){if(obj.grab&&obj.pid===e.pointerId)obj.grab=false;delete ptr[e.pointerId];if(!Object.keys(ptr).length)S.touch=false;}
-cv.addEventListener('pointerup',pu);cv.addEventListener('pointercancel',pu);
-objHome();
-function spawnDrop(){drops.push({x:cx()+(Math.random()-.5)*40,y:cy()+40,vy:.3+Math.random()*1.2,vx:(Math.random()-.5)*.4,a:1,r:2+Math.random()*3.6});}
-function spawnStrand(){strands.push({x:cx()+(Math.random()-.5)*30,y:cy()+30,len:0,max:18+Math.random()*40,a:.8,w:1.5+Math.random()*2});}
-const modeEl=document.getElementById('mode');
-function tick(t){
-  const now=performance.now(),idle=now-S.last;
-  // ---- SELF-TOUCH: builds when idle & aroused, escalates with arousal ----
-  if(idle>700){S.self=clamp(S.self+0.004+S.ar*0.004,0,1);}else{S.self=clamp(S.self-0.02,0,1);}
-  S.autoP+=0.02+S.self*0.06+S.ar*0.05; // caress speed grows
-  const intensity=S.self*(0.4+S.ar);
-  fingers.forEach((f,i)=>{f.a+=f.sp*(0.01+S.self*0.05+S.ar*0.04);
-    f.depth=Math.sin(S.autoP*f.sp+i)*0.5+0.5;});
-  if(S.self>0.1){const fb=intensity;S.ar=clamp(S.ar+fb*0.0022,0,1);S.wet=clamp(S.wet+fb*0.0011,0,1);
-    S.tremor=clamp(S.tremor+fb*0.01,0,1);S.temp=clamp(S.temp+fb*0.0003,36.5,39.9);
-    if(Math.random()<0.04+S.self*0.12&&S.ar>0.4)spawnStrand();}
-  // ---- object entry ----
-  const d2=Math.hypot(obj.x-cx(),obj.y-cy());
-  if(d2<70){const want=clamp(1-d2/70,0,1);
-    S.resist=obj.resist=clamp(want,0,1);
-    obj.inside=clamp(obj.inside+(want-obj.inside)*0.12,0,1);
-    S.stretch=obj.inside;
-    if(obj.grab){S.ar=clamp(S.ar+obj.inside*0.004,0,1);S.wet=clamp(S.wet+obj.inside*0.002,0,1);S.tremor=clamp(S.tremor+obj.inside*0.02,0,1);if(Math.random()<0.1)spawnStrand();}
-  } else {obj.inside=clamp(obj.inside-0.04,0,1);S.stretch=obj.inside;if(!obj.grab){obj.x+=(cx()-obj.x)*0.04;obj.y+=(cy()+200-obj.y)*0.04;}}
-  // ---- decay & derived ----
-  S.ar=clamp(S.ar-0.0014,0,1);S.wet=clamp(S.wet-0.0006,0,1);S.temp=clamp(S.temp-0.0009,36.5,39.9);
-  S.pulse=72+S.ar*72+S.self*16;S.breath=clamp(S.ar*0.7+S.self*0.3,0,1);
-  S.squeeze=S.ar*S.ar;S.blush+=((S.ar)-S.blush)*0.05;S.tremor=clamp(S.tremor-0.02,0,1);
-  if(S.ar>0.87)S.edge=clamp(S.edge+0.008+S.self*0.01,0,1);else S.edge=clamp(S.edge-0.01,0,1);
-  if(S.ar>=0.985&&S.climax<=0){S.climax=1;flash();for(let i=0;i<50;i++)spawnDrop();for(let i=0;i<14;i++)spawnStrand();}
-  if(S.climax>0){S.climax-=0.011;if(S.climax<0)S.climax=0;S.ar=clamp(S.ar-0.02,0,1);}
-  // mode label
-  let m='— покой —';
-  if(S.climax>0)m='✦ разрядка ✦';else if(S.edge>0.5)m='на грани…';else if(S.self>0.5)m='ласкаю себя…';else if(S.ar>0.5)m='тянусь к тебе…';else if(S.self>0.15)m='лениво глажу…';
-  modeEl.textContent=m;modeEl.style.opacity=0.55+S.ar*0.4;
-  draw(t);hud();requestAnimationFrame(tick);
-}
-function draw(t){
-  ctx.clearRect(0,0,W,H);const X=cx(),Y=cy();
-  const br=Math.sin(t*0.003)*(2+S.breath*5);
-  const tr=Math.sin(t*0.06)*S.tremor*3.2;
-  const hue=S.climax>0?330:(205-S.blush*40);
-  // ambient glow
-  let g=ctx.createRadialGradient(X,Y,8,X,Y,250);
-  g.addColorStop(0,`hsla(${hue},92%,72%,${0.2+S.ar*0.42})`);g.addColorStop(1,'hsla(210,90%,50%,0)');
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-  ctx.save();ctx.translate(X+tr,Y+br*0.3);
-  // ---- body form built from many points (living, breathing, asymmetric) ----
-  const N=60,bw=84+S.breath*5;
-  const pts=[];
-  for(let i=0;i<N;i++){const a=i/N*Math.PI*2;
-    let rx=bw*(1+0.04*Math.sin(a*3+t*0.0011));
-    let ry=140*(1+0.03*Math.sin(a*2+t*0.0009));
-    const wob=Math.sin(a*5+t*0.002)*2.2*(0.4+S.breath);
-    pts.push([Math.cos(a)*(rx+wob),Math.sin(a)*(ry+wob)]);}
-  // skin with subsurface: base gradient + inner warm glow
-  let grad=ctx.createRadialGradient(-18,-30,10,0,10,160);
-  grad.addColorStop(0,`hsl(18,78%,${94-S.blush*8}%)`);
-  grad.addColorStop(.55,`hsl(13,72%,${88-S.blush*12}%)`);
-  grad.addColorStop(1,`hsl(8,58%,${78-S.blush*10}%)`);
-  ctx.fillStyle=grad;blob(pts);ctx.fill();
-  // subsurface warm core
-  let ss=ctx.createRadialGradient(0,20,4,0,20,90);
-  ss.addColorStop(0,`hsla(345,85%,72%,${0.18+S.blush*0.3})`);ss.addColorStop(1,'hsla(345,85%,72%,0)');
-  ctx.fillStyle=ss;blob(pts);ctx.fill();
-  // side pink shading
-  let sh=ctx.createLinearGradient(-bw,0,bw,0);
-  sh.addColorStop(0,`hsla(345,72%,74%,${0.22+S.blush*0.22})`);sh.addColorStop(.5,'hsla(345,72%,74%,0)');sh.addColorStop(1,`hsla(345,72%,74%,${0.22+S.blush*0.22})`);
-  ctx.fillStyle=sh;blob(pts);ctx.fill();
-  // soft cleft lines, variable width
-  ctx.strokeStyle=`hsla(195,100%,80%,${0.15+S.ar*0.32})`;
-  for(let i=-2;i<=2;i++){ctx.lineWidth=i===0?2.4:1.1;ctx.beginPath();ctx.moveTo(i*19,-122);ctx.bezierCurveTo(i*27,0,i*27,0,i*19,120);ctx.stroke();}
-  // inner opening (stretches with object)
-  const open=9+S.ar*26-S.squeeze*8+S.stretch*30;
-  let cg=ctx.createLinearGradient(0,-70,0,90);
-  cg.addColorStop(0,`hsl(335,64%,${62+S.wet*14}%)`);cg.addColorStop(1,`hsl(342,68%,${42+S.wet*10}%)`);
-  ctx.fillStyle=cg;ctx.beginPath();ctx.moveTo(0,-72);ctx.bezierCurveTo(open,-30,open,62,0,92);ctx.bezierCurveTo(-open,62,-open,-30,0,-72);ctx.fill();
-  // wet sheen
-  ctx.fillStyle=`hsla(190,100%,93%,${S.wet*0.5})`;ctx.beginPath();ctx.ellipse(-open*0.25,20,open*0.4,30,0,0,7);ctx.fill();
-  // bud + highlight
-  ctx.fillStyle=`hsl(335,74%,${66+S.ar*14}%)`;ctx.beginPath();ctx.arc(0,-68,3+S.ar*3.6,0,7);ctx.fill();
-  ctx.fillStyle=`hsla(0,0%,100%,${0.4+S.ar*0.4})`;ctx.beginPath();ctx.arc(-1.2,-69.5,1.4+S.ar*1.2,0,7);ctx.fill();
-  // ---- self-touch fingers (caress dots with motion blur trails) ----
-  if(S.self>0.05){fingers.forEach((f,i)=>{const rr=f.r-(f.depth*16*S.self);const fx=Math.cos(f.a)*rr,fy=Math.sin(f.a)*rr*1.5;
-    ctx.globalAlpha=0.35+S.self*0.5;
-    let fg=ctx.createRadialGradient(fx-2,fy-2,0,fx,fy,7);fg.addColorStop(0,'hsla(20,80%,92%,0.95)');fg.addColorStop(1,'hsla(345,70%,76%,0.4)');
-    ctx.fillStyle=fg;ctx.beginPath();ctx.arc(fx,fy,4.5+S.self*1.5,0,7);ctx.fill();
-    ctx.globalAlpha=1;});}
-  ctx.restore();
-  // ---- abstract object ----
-  drawObj();
-  // ---- strands (fluid threads) ----
-  for(let i=strands.length-1;i>=0;i--){const s=strands[i];s.len+=0.8;s.y+=0.5;s.a-=0.006;if(s.a<=0||s.len>s.max+30){strands.splice(i,1);continue;}
-    ctx.globalAlpha=s.a;ctx.strokeStyle='hsla(190,100%,90%,0.7)';ctx.lineWidth=s.w;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.quadraticCurveTo(s.x+Math.sin(s.y*0.05)*4,s.y+s.len*0.5,s.x,s.y+s.len);ctx.stroke();
-    ctx.fillStyle='hsla(190,100%,92%,0.6)';ctx.beginPath();ctx.arc(s.x,s.y+s.len,s.w*0.9,0,7);ctx.fill();}
-  ctx.globalAlpha=1;
-  // drops
-  for(let i=drops.length-1;i>=0;i--){const d=drops[i];d.y+=d.vy;d.x+=d.vx;d.vy+=0.05;d.a-=0.006;if(d.a<=0||d.y>H){drops.splice(i,1);continue;}
-    ctx.globalAlpha=d.a;let dg=ctx.createRadialGradient(d.x-d.r*.3,d.y-d.r*.3,0,d.x,d.y,d.r);dg.addColorStop(0,'hsla(190,100%,96%,0.95)');dg.addColorStop(1,'hsla(195,90%,78%,0.5)');ctx.fillStyle=dg;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,7);ctx.fill();}
-  ctx.globalAlpha=1;
-  // ripples
-  for(let i=ripples.length-1;i>=0;i--){const r=ripples[i];r.r+=2.2;r.a-=0.02;if(r.a<=0){ripples.splice(i,1);continue;}ctx.globalAlpha=r.a;ctx.strokeStyle='hsla(195,100%,82%,0.7)';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(r.x,r.y,r.r,0,7);ctx.stroke();}
-  ctx.globalAlpha=1;
-  if(S.touch){ctx.strokeStyle='hsla(195,100%,84%,0.6)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(S.tx,S.ty,18,0,7);ctx.stroke();}
-}
-function blob(pts){ctx.beginPath();ctx.moveTo((pts[0][0]+pts[pts.length-1][0])/2,(pts[0][1]+pts[pts.length-1][1])/2);
-  for(let i=0;i<pts.length;i++){const c=pts[i],n=pts[(i+1)%pts.length];ctx.quadraticCurveTo(c[0],c[1],(c[0]+n[0])/2,(c[1]+n[1])/2);}ctx.closePath();}
-function drawObj(){const o=obj;const len=58,wd=15;
-  ctx.save();ctx.translate(o.x,o.y);
-  const ang=Math.atan2(cy()-o.y,cx()-o.x)+Math.PI/2;ctx.rotate(ang);
-  // shaft with volume shading
-  let g=ctx.createLinearGradient(-wd,0,wd,0);
-  g.addColorStop(0,'hsl(20,40%,72%)');g.addColorStop(.5,'hsl(22,45%,86%)');g.addColorStop(1,'hsl(18,38%,66%)');
-  ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(-wd,len);ctx.lineTo(-wd,-len*0.5);ctx.quadraticCurveTo(-wd,-len,0,-len);ctx.quadraticCurveTo(wd,-len,wd,-len*0.5);ctx.lineTo(wd,len);ctx.quadraticCurveTo(0,len+10,-wd,len);ctx.fill();
-  // tip
-  let tg=ctx.createRadialGradient(-3,-len+4,1,0,-len+4,wd+4);tg.addColorStop(0,'hsl(345,55%,80%)');tg.addColorStop(1,'hsl(345,45%,66%)');
-  ctx.fillStyle=tg;ctx.beginPath();ctx.ellipse(0,-len+4,wd,wd+2,0,0,7);ctx.fill();
-  // wet highlight on tip
-  ctx.fillStyle='hsla(0,0%,100%,0.5)';ctx.beginPath();ctx.ellipse(-4,-len+1,4,6,0.3,0,7);ctx.fill();
-  // base spheres
-  ctx.fillStyle='hsl(20,40%,70%)';ctx.beginPath();ctx.arc(-9,len+6,9,0,7);ctx.arc(9,len+6,9,0,7);ctx.fill();
-  ctx.restore();
-}
-function pct(v){return Math.round(v*100)+'%';}
-function hud(){
-  fA.style.width=pct(S.ar);vA.textContent=pct(S.ar);
-  fW.style.width=pct(S.wet);vW.textContent=pct(S.wet);
-  fT.style.width=((S.temp-36.5)/3.4*100)+'%';vT.textContent=S.temp.toFixed(1);
-  fP.style.width=((S.pulse-72)/88*100)+'%';vP.textContent=Math.round(S.pulse);
-  fSf.style.width=pct(S.self);vSf.textContent=pct(S.self);
-  fB.style.width=pct(S.breath);vB.textContent=pct(S.breath);
-  fSt.style.width=pct(S.stretch);vSt.textContent=pct(S.stretch);
-  fE.style.width=pct(S.edge);vE.textContent=pct(S.edge);
-}
-let pto;function flash(){const p=document.getElementById('peak');p.style.opacity=1;clearTimeout(pto);pto=setTimeout(()=>p.style.opacity=0,1100);}
-requestAnimationFrame(tick);
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);
+// softbody grid
+const COLS=18,ROWS=24;let pts=[],img=new Image();img.crossOrigin='anonymous';
+let imgW=0,imgH=0,offX=0,offY=0,drawW=0,drawH=0;
+function layout(){if(!imgW)return;const ar=imgW/imgH,car=W/H;if(ar>car){drawH=H;drawW=H*ar;}else{drawW=W;drawH=W/ar;}offX=(W-drawW)/2;offY=(H-drawH)/2;buildGrid();}
+function buildGrid(){pts=[];for(let y=0;y<=ROWS;y++){for(let x=0;x<=COLS;x++){const px=offX+drawW*x/COLS,py=offY+drawH*y/ROWS;pts.push({x:px,y:py,ox:px,oy:py,vx:0,vy:0,u:x/COLS,v:y/ROWS});}}}
+function idx(x,y){return y*(COLS+1)+x;}
+let arousal=0,wet=0,pulse=0,touch=null,tt=0;
+function phys(){for(const p of pts){let fx=(p.ox-p.x)*0.12,fy=(p.oy-p.y)*0.12;if(touch){const dx=p.x-touch.x,dy=p.y-touch.y,d=Math.hypot(dx,dy);if(d<90){const f=(1-d/90)*6;fx+=dx/(d+1)*f;fy+=dy/(d+1)*f;}}p.vx=(p.vx+fx)*0.9;p.vy=(p.vy+fy)*0.9;p.x+=p.vx;p.y+=p.vy;}}
+function draw(){ctx.clearRect(0,0,W,H);if(!imgW){requestAnimationFrame(draw);return;}
+// pulse breathing
+tt+=0.05;const breathe=Math.sin(tt)*(0.4+arousal*1.4);
+for(let y=0;y<ROWS;y++){for(let x=0;x<COLS;x++){
+const a=pts[idx(x,y)],b=pts[idx(x+1,y)],c=pts[idx(x+1,y+1)],dd=pts[idx(x,y+1)];
+const sx=a.u*imgW,sy=a.v*imgH,sw=imgW/COLS,sh=imgH/ROWS;
+drawQuad(a,b,c,dd,sx,sy,sw,sh);}}
+// soft glow when aroused
+if(arousal>0.05){ctx.save();ctx.globalCompositeOperation='soft-light';ctx.fillStyle='rgba(255,120,180,'+(arousal*0.25)+')';ctx.fillRect(offX,offY,drawW,drawH);ctx.restore();}
+phys();
+if(touch){arousal=Math.min(1,arousal+0.01);wet=Math.min(1,wet+0.008);pulse=Math.min(1,pulse+0.02);}else{arousal*=0.997;wet*=0.999;pulse*=0.96;}
+fA.style.width=(arousal*100)+'%';fW.style.width=(wet*100)+'%';fP.style.width=(Math.abs(Math.sin(tt*2))*pulse*100)+'%';
+requestAnimationFrame(draw);}
+function drawQuad(a,b,c,d,sx,sy,sw,sh){
+// affine-ish split into 2 triangles for image mapping
+tri(a,b,d,sx,sy,sx+sw,sy,sx,sy+sh);
+tri(b,c,d,sx+sw,sy,sx+sw,sy+sh,sx,sy+sh);}
+function tri(p0,p1,p2,u0,v0,u1,v1,u2,v2){
+ctx.save();ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.closePath();ctx.clip();
+const dx1=p1.x-p0.x,dy1=p1.y-p0.y,dx2=p2.x-p0.x,dy2=p2.y-p0.y;
+const du1=u1-u0,dv1=v1-v0,du2=u2-u0,dv2=v2-v0;
+const det=du1*dv2-du2*dv1;if(Math.abs(det)<0.01){ctx.restore();return;}
+const a11=(dx1*dv2-dx2*dv1)/det,a12=(dx2*du1-dx1*du2)/det,a21=(dy1*dv2-dy2*dv1)/det,a22=(dy2*du1-dy1*du2)/det;
+const e=p0.x-a11*u0-a12*v0,f=p0.y-a21*u0-a22*v0;
+ctx.setTransform(a11*DPR,a21*DPR,a12*DPR,a22*DPR,e*DPR,f*DPR);ctx.drawImage(img,0,0);ctx.restore();ctx.setTransform(DPR,0,0,DPR,0,0);}
+function pos(e){const t=e.touches?e.touches[0]:e;const r=cv.getBoundingClientRect();return{x:t.clientX-r.left,y:t.clientY-r.top};}
+cv.addEventListener('pointerdown',e=>{touch=pos(e);});
+cv.addEventListener('pointermove',e=>{if(touch||e.pressure>0)touch=pos(e);});
+cv.addEventListener('pointerup',()=>{touch=null;});
+cv.addEventListener('pointerleave',()=>{touch=null;});
+img.onload=()=>{imgW=img.naturalWidth;imgH=img.naturalHeight;document.getElementById('load').style.display='none';resize();layout();};
+img.onerror=()=>{document.getElementById('load').textContent='Не удалось загрузить кадр 🌙';};
+resize();img.src=IMG_URL;draw();
 </script>
 </body>
 </html>
